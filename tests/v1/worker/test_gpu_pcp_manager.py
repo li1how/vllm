@@ -21,11 +21,12 @@ def _copy_to_cpu(value, out=None, device=None):
     return tensor
 
 
-def test_replicated_decode_piecewise_graph_padding(monkeypatch):
+def test_sharded_decode_piecewise_graph_padding(monkeypatch):
     manager = PCPManager(
         pcp_world_size=2,
         pcp_rank=0,
         device=torch.device("cpu"),
+        shard_decode_requests=True,
         dcp_world_size=1,
     )
     monkeypatch.setattr(pcp_manager_module, "async_copy_to_gpu", _copy_to_cpu)
@@ -38,19 +39,19 @@ def test_replicated_decode_piecewise_graph_padding(monkeypatch):
         padded_num_tokens=4,
     )
 
-    assert per_rank_num_tokens == [3, 3]
+    assert per_rank_num_tokens == [2, 1]
     request_indices = [
         [segment.global_batch_req_idx for segment in rank] for rank in segments_by_rank
     ]
-    assert request_indices == [[0, 1, 2], [0, 1, 2]]
-    assert torch.equal(manager._hidden_restore_idx, torch.tensor([0, 1, 2]))
+    assert request_indices == [[0, 2], [1]]
+    assert torch.equal(manager._hidden_restore_idx, torch.tensor([0, 4, 1]))
     assert torch.equal(
         manager._padded_gather_idx,
-        torch.tensor([0, 1, 2, 0, 0, 1, 2, 0]),
+        torch.tensor([0, 2, 0, 0, 1, 0, 0, 0]),
     )
     assert torch.equal(
         manager._gathered_kv_write_mask,
-        torch.tensor([True, True, True, False, False, False, False, False]),
+        torch.tensor([True, True, False, False, True, False, False, False]),
     )
 
 
@@ -76,7 +77,7 @@ def test_input_buffers_are_exposed_for_cudagraph_capture():
         (2, [7], [True], 4),
         (2, [3], [False], 3),
         (2, [3, 8], [False, True], 7),
-        (4, [2, 9], [False, True], 5),
+        (4, [2, 9], [False, True], 4),
     ],
 )
 def test_num_tokens_for_dispatch_uses_largest_pcp_rank(
@@ -86,6 +87,7 @@ def test_num_tokens_for_dispatch_uses_largest_pcp_rank(
         pcp_world_size=pcp_world_size,
         pcp_rank=0,
         device=torch.device("cpu"),
+        shard_decode_requests=True,
     )
 
     actual = manager.get_num_tokens_for_dispatch(
@@ -101,6 +103,7 @@ def test_graph_padding_cannot_be_smaller_than_largest_pcp_rank(monkeypatch):
         pcp_world_size=2,
         pcp_rank=0,
         device=torch.device("cpu"),
+        shard_decode_requests=True,
         dcp_world_size=1,
     )
     monkeypatch.setattr(pcp_manager_module, "async_copy_to_gpu", _copy_to_cpu)
@@ -111,7 +114,7 @@ def test_graph_padding_cannot_be_smaller_than_largest_pcp_rank(monkeypatch):
             num_computed_tokens=np.full(3, 16, dtype=np.int32),
             is_prefilling=np.zeros(3, dtype=np.bool_),
             query_start_loc_np=np.arange(4, dtype=np.int32),
-            padded_num_tokens=2,
+            padded_num_tokens=1,
         )
 
 
