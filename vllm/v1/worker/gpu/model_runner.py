@@ -1616,6 +1616,16 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                     batch_req_state.num_scheduled_tokens,
                     batch_req_state.is_prefilling_np,
                 )
+                if (
+                    self.pcp_manager.shard_decode_requests
+                    and not bool(batch_req_state.is_prefilling_np.any())
+                ):
+                    # FULL decode graphs match both token and request counts.
+                    # The model sees only the owner-local requests on each PCP rank.
+                    num_reqs = self.pcp_manager.get_num_reqs_for_dispatch(
+                        batch_req_state.num_scheduled_tokens,
+                        batch_req_state.is_prefilling_np,
+                    )
 
         num_active_loras = 0
         if self.lora_config:

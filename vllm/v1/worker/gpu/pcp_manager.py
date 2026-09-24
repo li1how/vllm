@@ -363,6 +363,17 @@ class PCPManager:
             for rank in range(self.pcp_world_size)
         )
 
+    def get_num_reqs_for_dispatch(
+        self,
+        num_scheduled_tokens: np.ndarray,
+        is_prefilling: np.ndarray,
+    ) -> int:
+        """Return the largest rank-local request count for graph matching."""
+        return max(
+            sum(1 for _ in self._iter_rank_chunks(rank, num_scheduled_tokens, is_prefilling))
+            for rank in range(self.pcp_world_size)
+        )
+
     @property
     def input_buffers(self) -> InputBuffers:
         assert self._input_buffers is not None
